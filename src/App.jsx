@@ -4,7 +4,7 @@
  * Queries are cached for 30 seconds, are not refetched on window focus, and are retried at most once more except
  * for 401, 403 and 404 responses, which retrying would not fix.
  *
- * @author Kwasi Adabo Boakye
+ * @author Kwasi Adabo Boakye for Variable-x
  */
 
 import { RouterProvider } from 'react-router-dom';
