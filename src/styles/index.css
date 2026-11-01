@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* University of Ghana crest: royal indigo shield (#2b1471) and gold (#dfb725). */
+  --color-brand-50: #f5f3fb;
+  --color-brand-100: #e9e5f6;
+  --color-brand-200: #d2cbee;
+  --color-brand-300: #ab9fdc;
+  --color-brand-400: #7f6fc4;
+  --color-brand-500: #5a47b0;
+  --color-brand-600: #3a2490;
+  --color-brand-700: #2b1471;
+  --color-brand-800: #22105c;
+  --color-brand-900: #1a0c45;
+  --color-brand-950: #120832;
+  --color-gold-50: #fdf9ea;
+  --color-gold-100: #f9eec4;
+  --color-gold-200: #f3df8f;
+  --color-gold-300: #ecd068;
+  --color-gold-400: #e5c444;
+  --color-gold-500: #dfb725;
+  /* 600 and 700 are for gold text on light backgrounds (WCAG AA). */
+  --color-gold-600: #8a6a0c;
+  --color-gold-700: #6f5509;
+  --color-ink: #1e1c2b;
+  --color-ink-soft: #55526a;
+  --color-line: #e5e3ee;
+  --color-canvas: #f7f6fa;
+  --radius-card: 0.875rem;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-white font-sans text-ink;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply tracking-tight text-ink;
+  }
+  ::selection {
+    background: var(--color-gold-100);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)];
+  }
+  .label-eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.12em] text-brand-700;
+  }
+  .prose-archive p {
+    @apply mb-3 leading-relaxed;
+  }
+  .prose-archive p:last-child {
+    @apply mb-0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
