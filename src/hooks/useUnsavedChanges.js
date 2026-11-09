@@ -7,6 +7,16 @@
 import { useEffect } from 'react';
 import { useBlocker } from 'react-router-dom';
 
+let leavingWithoutPrompt = false;
+
+/**
+ * Lets the page be left without the unsaved-changes confirmation, for an automatic sign-out after inactivity when
+ * nobody is there to answer it.
+ */
+export const leaveWithoutPrompt = () => {
+  leavingWithoutPrompt = true;
+};
+
 /**
  * Asks for confirmation before navigating to another page within the application, or closing or reloading the
  * browser tab, while the form has unsaved changes.
@@ -16,7 +26,8 @@ import { useBlocker } from 'react-router-dom';
  */
 export function useUnsavedChanges(dirty, message = 'You have unsaved changes. Leave without saving?') {
   const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname,
+    ({ currentLocation, nextLocation }) =>
+      !leavingWithoutPrompt && dirty && currentLocation.pathname !== nextLocation.pathname,
   );
   useEffect(() => {
     if (blocker.state === 'blocked') {
@@ -33,6 +44,7 @@ export function useUnsavedChanges(dirty, message = 'You have unsaved changes. Le
      * @param {BeforeUnloadEvent} e The unload event.
      */
     const handler = (e) => {
+      if (leavingWithoutPrompt) return;
       e.preventDefault();
       e.returnValue = message;
     };

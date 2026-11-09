@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { MoveRight, AlertOctagon, Stethoscope, Printer } from 'lucide-react';
+import { MoveRight, AlertOctagon, Stethoscope, Printer, Pencil } from 'lucide-react';
 import { download, errorMessage } from '../../lib/api.js';
 import { useApi, useApiMutation, post } from '../../lib/query.js';
 import { useCan } from '../../hooks/useCan.js';
@@ -31,12 +31,23 @@ import {
   ConfirmDialog,
 } from '../../components/ui/index.js';
 import { LocationPicker } from './ItemsPage.jsx';
+import { EditItemDialog } from './EditItemDialog.jsx';
 import { fmtDateTime, humanize } from '../../utils/format.js';
 
 /**
+ * Returns the item's latest movement out for digitisation, which names the batch.
+ *
+ * @param {object} item The item with its movements, newest first.
+ * @returns {object|undefined}
+ */
+const digitisationMove = (item) => item.movements?.find((m) => m.movementType === 'digitisation');
+
+/**
  * Shows an item with its details and its complete movement, condition and circulation history. Authorised users can
- * record a movement (with an authorised capacity override where needed), record a condition assessment, report the
- * item missing with a reason, and print its label. Issued, disposed and withdrawn items cannot be moved here.
+ * edit its details (not its barcode), record a movement (with an authorised capacity override where needed), record a
+ * condition assessment, report the
+ * item missing with a reason, and print its label. Issued, disposed and withdrawn items cannot be moved here, nor
+ * items out for digitisation, which return to their shelves when their batch is completed.
  *
  * @returns {JSX.Element}
  */
@@ -46,6 +57,7 @@ export default function ItemDetailPage() {
   const [move, setMove] = useState(null);
   const [cond, setCond] = useState(null);
   const [missing, setMissing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [moveError, setMoveError] = useState(null);
   const { data, isLoading, error, refetch } = useApi(['physical-item', id], `/physical-items/${id}`);
   const inval = [['physical-item', id], 'physical-items'];
@@ -72,7 +84,7 @@ export default function ItemDetailPage() {
   if (isLoading) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   const i = data.data;
-  const movable = !['issued', 'disposed', 'withdrawn'].includes(i.status) && can('physical.move');
+  const movable = !['issued', 'disposed', 'withdrawn', 'in_digitisation'].includes(i.status) && can('physical.move');
   return (
     <div>
       <PageHeader
@@ -111,6 +123,11 @@ export default function ItemDetailPage() {
               </Button>
             )}
             {can('physical.move') && (
+              <Button size="sm" variant="secondary" icon={Pencil} onClick={() => setEditing(true)}>
+                Edit details
+              </Button>
+            )}
+            {can('physical.move') && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -136,6 +153,12 @@ export default function ItemDetailPage() {
           </>
         }
       />
+      {i.status === 'in_digitisation' && (
+        <Alert tone="info" className="mb-4" title="Out for digitisation">
+          {digitisationMove(i)?.reason || 'This item is in a digitisation batch.'} It cannot be issued or moved until
+          the batch is completed, when it returns to its shelf automatically.
+        </Alert>
+      )}
       {i.status === 'issued' && (
         <Alert tone="info" className="mb-4">
           This item is issued in the reading room. It can only be moved after its return is recorded at the circulation
@@ -154,7 +177,12 @@ export default function ItemDetailPage() {
                 <li key={m.id} className="px-5 py-3 text-sm">
                   <p className="font-semibold">
                     {humanize(m.movementType)}: {m.fromLocation?.code || '—'} →{' '}
-                    {m.toLocation?.code || (m.movementType === 'issue' ? 'Reading room' : '—')}
+                    {m.toLocation?.code ||
+                      (m.movementType === 'issue'
+                        ? 'Reading room'
+                        : m.movementType === 'digitisation'
+                          ? 'Digitisation'
+                          : '—')}
                   </p>
                   <p className="text-ink-soft">
                     {m.reason}
@@ -387,6 +415,7 @@ export default function ItemDetailPage() {
         loading={doMissing.isPending}
         onConfirm={({ reason }) => doMissing.mutate({ reason })}
       />
+      {editing && <EditItemDialog item={i} onClose={() => setEditing(false)} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Store of the public institution settings (names, tagline, registration and enquiry options, privacy notice),
+ * Store of the public institution settings (names, tagline, registration and enquiry options, privacy notice, idle
+ * sign-out time),
  * loaded once at start-up, with sensible defaults until they arrive.
  *
  * @author Kwasi Adabo Boakye
@@ -14,6 +15,7 @@ export const useInstitution = create((set) => ({
   allowAnonymousEnquiries: true,
   publicRegistration: true,
   registrationNotice: '',
+  idleTimeoutMinutes: 25,
   setFromSettings: (s) =>
     set({
       name: s['institution.name'] || 'University of Ghana Archives',
@@ -22,5 +24,6 @@ export const useInstitution = create((set) => ({
       allowAnonymousEnquiries: s['research.allowAnonymousEnquiries'] !== false,
       publicRegistration: s['security.publicRegistration'] !== false,
       registrationNotice: s['privacy.registrationNotice'] || '',
+      idleTimeoutMinutes: Number(s['security.idleTimeoutMinutes'] ?? 25),
     }),
 }));

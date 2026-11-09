@@ -12,6 +12,7 @@ import { api, download, errorMessage } from '../../lib/api.js';
 import { useApi } from '../../lib/query.js';
 import { useQueryParams } from '../../hooks/useQueryParams.js';
 import { useCan } from '../../hooks/useCan.js';
+import { FitTable } from '../../components/tables/FitTable.jsx';
 import { PageHeader } from '../../components/layout/PageHeader.jsx';
 import {
   Card,
@@ -192,8 +193,8 @@ export default function ReportsPage() {
               <ErrorState error={report.error} />
             ) : (
               report.data && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div>
+                  <FitTable watch={`${report.data.columns.length}:${report.data.rows.length}`}>
                     <thead className="bg-canvas/70 text-xs uppercase text-ink-soft">
                       <tr>
                         {report.data.columns.map((c) => (
@@ -207,14 +208,14 @@ export default function ReportsPage() {
                       {report.data.rows.map((r, i) => (
                         <tr key={i}>
                           {report.data.columns.map((c) => (
-                            <td key={c.key} className="px-4 py-2">
+                            <td key={c.key} data-label={c.label} className="px-4 py-2">
                               {fmtCell(r[c.key])}
                             </td>
                           ))}
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </FitTable>
                   {!report.data.rows.length && <EmptyState title="No data for this period" />}
                   {report.data.truncated && (
                     <p className="px-4 py-2 text-xs text-ink-soft">

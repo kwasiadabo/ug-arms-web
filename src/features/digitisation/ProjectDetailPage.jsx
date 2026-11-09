@@ -161,6 +161,14 @@ export default function ProjectDetailPage() {
                   ),
                 },
                 {
+                  label: 'Accession',
+                  value: p.accession && (
+                    <Link className="text-brand-700 hover:underline" to={`/admin/accessions/${p.accession.id}`}>
+                      {p.accession.accessionNumber} — {p.accession.title}
+                    </Link>
+                  ),
+                },
+                {
                   label: 'Quality profile',
                   value:
                     q &&

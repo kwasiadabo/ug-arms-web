@@ -16,7 +16,7 @@ import { useCan } from '../../hooks/useCan.js';
 import { PageHeader } from '../../components/layout/PageHeader.jsx';
 import { DataTable } from '../../components/tables/DataTable.jsx';
 import { SearchInput, FilterSelect } from '../../components/search/SearchInput.jsx';
-import { Button, StatusBadge, Dialog, Field, Input, Textarea, Select } from '../../components/ui/index.js';
+import { Alert, Button, StatusBadge, Dialog, Field, Input, Textarea, Select } from '../../components/ui/index.js';
 import { fmtDate, humanize } from '../../utils/format.js';
 
 const STATUSES = [
@@ -33,7 +33,9 @@ const STATUSES = [
 
 /**
  * Dialog that starts a draft transfer. Liaisons can choose only their own unit, while reviewers may choose any
- * unit. The transfer authority (the memo or decision authorising the transfer) and contact details are recorded.
+ * unit; choosing another unit prepares the transfer on that department's behalf, as a Records Officer does when the
+ * department has no liaison. The transfer authority (the memo or decision authorising the transfer) and contact
+ * details are recorded.
  * After creation the transfer opens so the inventory can be added.
  *
  * @param {object} props
@@ -71,7 +73,28 @@ export function NewTransferDialog({ open, onClose }) {
    * @returns {(e: Event) => void}
    */
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  /**
+   * Changes the originating unit. Switching to another unit means preparing the transfer on that unit's behalf, so
+   * the contact fields, which start as the current user's own details, are cleared for the department's contact;
+   * switching back restores them if they are still empty.
+   *
+   * @param {Event} e Change event of the unit select.
+   */
+  const setUnit = (e) => {
+    const unitId = e.target.value;
+    const own = unitId === user.organisationUnitId;
+    const mineOrBlank = (v, mine) => !v || v === mine;
+    setF({
+      ...f,
+      originatingUnitId: unitId,
+      contactName: mineOrBlank(f.contactName, user.fullName) ? (own ? user.fullName : '') : f.contactName,
+      contactEmail: mineOrBlank(f.contactEmail, user.email) ? (own ? user.email : '') : f.contactEmail,
+    });
+  };
   const unitOptions = (units.data || []).filter((u) => can('transfer.review') || u.id === user.organisationUnitId);
+  const onBehalf = Boolean(f.originatingUnitId) && f.originatingUnitId !== user.organisationUnitId;
+  const onBehalfUnit = unitOptions.find((u) => u.id === f.originatingUnitId);
   return (
     <Dialog
       open={open}
@@ -105,8 +128,18 @@ export function NewTransferDialog({ open, onClose }) {
         >
           <Input value={f.title} onChange={set('title')} />
         </Field>
+        {onBehalf && (
+          <Alert
+            tone="info"
+            className="sm:col-span-2"
+            title={`Submitting on behalf of ${onBehalfUnit?.name || 'this unit'}`}
+          >
+            You are acting as the department&apos;s liaison. Enter the department&apos;s contact person and the transfer
+            authority they gave you. Another reviewer will decide on this transfer.
+          </Alert>
+        )}
         <Field label="Originating unit" required>
-          <Select value={f.originatingUnitId} onChange={set('originatingUnitId')} placeholder="Select unit">
+          <Select value={f.originatingUnitId} onChange={setUnit} placeholder="Select unit">
             {unitOptions.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name}
@@ -117,7 +150,11 @@ export function NewTransferDialog({ open, onClose }) {
         <Field label="Proposed transfer date">
           <Input type="date" value={f.proposedTransferDate} onChange={set('proposedTransferDate')} />
         </Field>
-        <Field label="Contact person" required>
+        <Field
+          label={onBehalf ? 'Department contact person' : 'Contact person'}
+          required
+          help={onBehalf ? 'The person in the department who can answer questions about these records' : undefined}
+        >
           <Input value={f.contactName} onChange={set('contactName')} />
         </Field>
         <Field label="Contact email">
@@ -177,7 +214,16 @@ export default function TransfersPage() {
         cell: ({ row }) => <span className="font-semibold">{row.original.title}</span>,
       },
       { id: 'unit', header: 'Originating unit', cell: ({ row }) => row.original.originatingUnit?.name },
-      { id: 'by', header: 'Prepared by', cell: ({ row }) => row.original.submittedBy?.fullName },
+      {
+        id: 'by',
+        header: 'Prepared by',
+        cell: ({ row }) => (
+          <span>
+            {row.original.submittedBy?.fullName}
+            {row.original.submittedOnBehalf && <span className="block text-xs text-ink-soft">on behalf of unit</span>}
+          </span>
+        ),
+      },
       {
         id: 'status',
         header: 'Status',

@@ -849,12 +849,12 @@ function Versions({ r }) {
         title={cmp ? `Changes from version ${cmp.from} to ${cmp.to}` : ''}
       >
         {compare.data?.changes.length ? (
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm [overflow-wrap:anywhere]">
             <thead>
               <tr className="text-left text-xs uppercase text-ink-soft">
-                <th className="py-1 pr-3">Field</th>
-                <th className="py-1 pr-3">Before</th>
-                <th className="py-1">After</th>
+                <th className="w-1/5 py-1 pr-3">Field</th>
+                <th className="w-2/5 py-1 pr-3">Before</th>
+                <th className="w-2/5 py-1">After</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">

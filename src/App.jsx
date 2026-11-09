@@ -1,5 +1,6 @@
 /**
- * Root application component: data fetching (TanStack Query), session restoration, routing and toast notifications.
+ * Root application component: data fetching (TanStack Query), session restoration, routing, sign-out after
+ * inactivity and toast notifications.
  *
  * Queries are cached for 30 seconds, are not refetched on window focus, and are retried at most once more except
  * for 401, 403 and 404 responses, which retrying would not fix.
@@ -12,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { router } from './routes/router.jsx';
 import { SessionBootstrap } from './app/SessionBootstrap.jsx';
+import { IdleTimeout } from './app/IdleTimeout.jsx';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +35,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <SessionBootstrap>
         <RouterProvider router={router} />
+        <IdleTimeout />
       </SessionBootstrap>
       <Toaster
         position="top-right"

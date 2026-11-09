@@ -8,11 +8,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { FileDown, Plus, Trash2, ShieldAlert, Library, Link2, Paperclip, Upload } from 'lucide-react';
+import { Eye, FileDown, PackagePlus, Plus, Trash2, ShieldAlert, Library, Link2, Paperclip, Upload } from 'lucide-react';
 import { api, download } from '../../lib/api.js';
 import { useApi, useApiMutation, post, put, patch } from '../../lib/query.js';
 import { useCan } from '../../hooks/useCan.js';
+import { useStackedTable } from '../../hooks/useStackedTable.js';
 import { PageHeader } from '../../components/layout/PageHeader.jsx';
+import { DocumentPreview } from '../../components/viewer/DocumentPreview.jsx';
+import { RegisterBoxesDialog } from './RegisterBoxesDialog.jsx';
+import { AccessionDigitisation } from './AccessionDigitisation.jsx';
 import { Timeline } from '../../components/feedback/Timeline.jsx';
 import {
   Button,
@@ -34,6 +38,16 @@ import {
 } from '../../components/ui/index.js';
 import { RecordPicker } from '../archival-records/Pickers.jsx';
 import { fmtDate, fmtDateTime, humanize, fmtBytes } from '../../utils/format.js';
+
+// Editable columns of the received items table.
+const ITEM_COLS = [
+  ['description', 'Description'],
+  ['format', 'Format'],
+  ['quantity', 'Qty'],
+  ['extent', 'Extent'],
+  ['condition', 'Condition'],
+  ['boxNumber', 'Box'],
+];
 
 const FIELDS = [
   ['title', 'Title', 'text', 2],
@@ -66,13 +80,24 @@ const FIELDS = [
  * @param {object} props.a The accession.
  * @param {boolean} props.open Whether the dialog is shown.
  * @param {() => void} props.onClose Called to close it.
+ * @param {string[]} [props.focus] Fields to highlight, the first of which receives the cursor; used when the dialog
+ *   is opened from a missing-information flag.
  * @returns {JSX.Element}
  */
-function EditDialog({ a, open, onClose }) {
-  const { register, handleSubmit, reset } = useForm();
+function EditDialog({ a, open, onClose, focus = [] }) {
+  const { register, handleSubmit, reset, setFocus } = useForm();
+  const first = focus[0];
   useEffect(() => {
-    if (open) reset(Object.fromEntries(FIELDS.map(([k]) => [k, a[k] ?? ''])));
-  }, [open, a, reset]);
+    if (!open) return;
+    reset(Object.fromEntries(FIELDS.map(([k]) => [k, a[k] ?? ''])));
+    // After the form has rendered, put the cursor in the flagged field and bring it to the middle of the dialog.
+    if (first)
+      setTimeout(() => {
+        setFocus(first);
+        // Scroll again once the dialog has finished opening, when its height is final.
+        setTimeout(() => document.activeElement?.scrollIntoView?.({ block: 'center' }), 250);
+      }, 0);
+  }, [open, a, reset, setFocus, first]);
   const save = useApiMutation((b) => patch(`/accessions/${a.id}`, b), {
     success: 'Accession updated',
     invalidate: [['accession', a.id]],
@@ -107,7 +132,14 @@ function EditDialog({ a, open, onClose }) {
     >
       <div className="grid gap-4 sm:grid-cols-2">
         {FIELDS.map(([k, l, t, span]) => (
-          <Field key={k} label={l} className={span === 2 ? 'sm:col-span-2' : ''}>
+          <Field
+            key={k}
+            label={l}
+            hint={focus.includes(k) ? 'Missing' : undefined}
+            className={`${span === 2 ? 'sm:col-span-2' : ''} ${
+              focus.includes(k) ? 'rounded-lg bg-amber-50 p-2 ring-1 ring-amber-300' : ''
+            }`}
+          >
             {t === 'area' ? <Textarea rows={2} {...register(k)} /> : <Input type={t || 'text'} {...register(k)} />}
           </Field>
         ))}
@@ -132,12 +164,17 @@ export default function AccessionDetailPage() {
   const [tab, setTab] = useState('items');
   const [action, setAction] = useState(null);
   const [edit, setEdit] = useState(false);
+  const [editFocus, setEditFocus] = useState([]);
   const [quarantine, setQuarantine] = useState(null);
   const [items, setItems] = useState([]);
+  const fit = useStackedTable(items.length);
   const [decisions, setDecisions] = useState({});
   const [colOpen, setColOpen] = useState(false);
   const [col, setCol] = useState({ level: 'fonds', localIdentifier: '', title: '' });
   const [files, setFiles] = useState([]);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [registerBoxes, setRegisterBoxes] = useState(false);
+  const boxes = useApi(['accession-boxes', id], `/accessions/${id}/boxes`);
   const { data, isLoading, error, refetch } = useApi(['accession', id], `/accessions/${id}`);
   useEffect(() => {
     if (data) {
@@ -149,6 +186,7 @@ export default function AccessionDetailPage() {
           quantity: i.quantity || 1,
           extent: i.extent || '',
           condition: i.condition || '',
+          boxNumber: i.boxNumber || '',
         })),
       );
       setDecisions(
@@ -190,6 +228,19 @@ export default function AccessionDetailPage() {
   if (isLoading) return <PageLoader />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   const a = data.data;
+  // Submitting and approving are refused while required information is missing, unless an administrator has
+  // switched the rule off (workflow.requireCompleteAccessions).
+  const blocked = Boolean(a.completenessRequired && a.missingDetails?.length);
+  // Who can unblock an accession under review: an approver queries it back, the officer can return it to draft.
+  const canQuery = !['draft', 'queried'].includes(a.status) && a.availableActions.includes('query');
+  const canRecall = a.availableActions.includes('recall');
+  const plan = boxes.data?.data;
+  const boxSummary =
+    plan && plan.boxes.length
+      ? `${plan.registeredCount} of ${plan.boxes.length} box${plan.boxes.length === 1 ? '' : 'es'} registered${
+          plan.canRegister ? '' : ' · boxes can be registered once the accession is approved'
+        }`
+      : undefined;
   const editable = ['draft', 'queried'].includes(a.status) && can('accession.create');
   const labels = {
     submit: 'Submit for approval',
@@ -198,6 +249,7 @@ export default function AccessionDetailPage() {
     approve: 'Approve',
     reject: 'Reject',
     close: 'Close',
+    recall: 'Return to draft',
   };
   return (
     <div>
@@ -230,6 +282,12 @@ export default function AccessionDetailPage() {
                 key={x}
                 size="sm"
                 variant={x === 'reject' ? 'danger' : x === 'query' ? 'secondary' : 'primary'}
+                disabled={blocked && ['submit', 'approve'].includes(x)}
+                title={
+                  blocked && ['submit', 'approve'].includes(x)
+                    ? 'Complete the missing information listed below first'
+                    : undefined
+                }
                 onClick={() => setAction(x)}
               >
                 {labels[x]}
@@ -258,9 +316,64 @@ export default function AccessionDetailPage() {
           </>
         }
       />
-      {a.missing.length > 0 && (
-        <Alert tone="warning" className="mb-4" title="Missing information flagged">
-          {a.missing.map(humanize).join(', ')}
+      {a.missingDetails?.length > 0 && (
+        <Alert
+          tone="warning"
+          className="mb-4"
+          title={
+            !blocked
+              ? 'Missing information flagged'
+              : ['draft', 'queried'].includes(a.status)
+                ? 'Complete these before submitting for approval'
+                : canQuery
+                  ? 'Missing information: query it back to the officer before approval'
+                  : canRecall
+                    ? 'Missing information: return it to draft to complete it, then submit it again'
+                    : 'Missing information: an approver must query it back before it can be completed'
+          }
+        >
+          {blocked && (canQuery || canRecall) && (
+            <div className="mb-2 mt-1 flex flex-wrap gap-2">
+              {canQuery && (
+                <Button size="sm" onClick={() => setAction('query')}>
+                  Query it back
+                </Button>
+              )}
+              {canRecall && !canQuery && (
+                <Button size="sm" onClick={() => setAction('recall')}>
+                  Return to draft
+                </Button>
+              )}
+            </div>
+          )}
+          <ul className="mt-1 space-y-2.5">
+            {a.missingDetails.map((m) => (
+              <li key={m.key} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+                <span className="min-w-0 flex-1 basis-72">
+                  <span className="font-semibold">{m.label}.</span> {m.origin}
+                  <span className="block text-xs opacity-80">{m.hint}</span>
+                </span>
+                {editable && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (m.fix.kind === 'items') setTab('items');
+                      else {
+                        setEditFocus(m.fix.fields);
+                        setEdit(true);
+                      }
+                    }}
+                  >
+                    {m.fix.kind === 'items' ? 'Go to items' : 'Fill in'}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {!editable && ['draft', 'queried'].includes(a.status) && (
+            <p className="mt-2 text-xs">These can be filled in by an officer who can edit accessions.</p>
+          )}
         </Alert>
       )}
       {a.isQuarantined && (
@@ -277,6 +390,7 @@ export default function AccessionDetailPage() {
               { value: 'items', label: 'Items', count: a.items.length },
               { value: 'catalogue', label: 'Catalogue links', count: a.recordLinks.length },
               { value: 'physical', label: 'Physical items', count: a.physicalItems.length },
+              { value: 'digitisation', label: 'Digitisation' },
               { value: 'documents', label: 'Documents', count: a.documents.length },
               { value: 'history', label: 'History' },
             ]}
@@ -298,7 +412,10 @@ export default function AccessionDetailPage() {
                         variant="secondary"
                         icon={Plus}
                         onClick={() =>
-                          setItems([...items, { description: '', format: '', quantity: 1, extent: '', condition: '' }])
+                          setItems([
+                            ...items,
+                            { description: '', format: '', quantity: 1, extent: '', condition: '', boxNumber: '' },
+                          ])
                         }
                       >
                         Add item
@@ -316,6 +433,7 @@ export default function AccessionDetailPage() {
                                 format: i.format || null,
                                 extent: i.extent || null,
                                 condition: i.condition || null,
+                                boxNumber: i.boxNumber || null,
                               })),
                           )
                         }
@@ -326,8 +444,8 @@ export default function AccessionDetailPage() {
                   )
                 }
               />
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div ref={fit.containerRef} className="overflow-x-auto">
+                <table ref={fit.tableRef} className={`w-full text-sm ${fit.className}`}>
                   <thead className="bg-canvas/70 text-xs uppercase text-ink-soft">
                     <tr>
                       <th className="px-3 py-2 text-left">#</th>
@@ -336,6 +454,7 @@ export default function AccessionDetailPage() {
                       <th className="px-3 py-2 text-left">Qty</th>
                       <th className="px-3 py-2 text-left">Extent</th>
                       <th className="px-3 py-2 text-left">Condition</th>
+                      <th className="px-3 py-2 text-left">Box</th>
                       <th className="px-3 py-2 text-left">Decision</th>
                       <th />
                     </tr>
@@ -343,12 +462,14 @@ export default function AccessionDetailPage() {
                   <tbody className="divide-y divide-line">
                     {items.map((it, i) => (
                       <tr key={it.id || i}>
-                        <td className="px-3 py-2 text-xs text-ink-soft">{i + 1}</td>
-                        {['description', 'format', 'quantity', 'extent', 'condition'].map((k) => (
-                          <td key={k} className="px-1 py-1">
+                        <td data-label="Item" className="px-3 py-2 text-xs text-ink-soft">
+                          {i + 1}
+                        </td>
+                        {ITEM_COLS.map(([k, label]) => (
+                          <td key={k} data-label={label} className="px-1 py-1">
                             {editable ? (
                               <input
-                                aria-label={`${k} ${i + 1}`}
+                                aria-label={`${label} ${i + 1}`}
                                 value={it[k]}
                                 onChange={(e) =>
                                   setItems(items.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)))
@@ -360,7 +481,7 @@ export default function AccessionDetailPage() {
                             )}
                           </td>
                         ))}
-                        <td className="px-3 py-1">
+                        <td data-label="Decision" className="px-3 py-1">
                           {a.status === 'under_review' && can('accession.approve') && it.id ? (
                             <select
                               aria-label={`Decision ${i + 1}`}
@@ -440,19 +561,35 @@ export default function AccessionDetailPage() {
               )}
             </Card>
           )}
+          {tab === 'digitisation' && <AccessionDigitisation accession={a} />}
           {tab === 'physical' && (
             <Card>
               <CardHeader
                 title="Physical items and locations"
+                description={boxSummary}
                 actions={
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon={Plus}
-                    to={`/admin/storage/items?new=1&accessionId=${a.id}`}
-                  >
-                    Register physical item
-                  </Button>
+                  can('physical.move') && (
+                    <>
+                      {plan && plan.registeredCount < plan.boxes.length && (
+                        <Button
+                          size="sm"
+                          icon={PackagePlus}
+                          disabled={!boxes.data.data.canRegister}
+                          onClick={() => setRegisterBoxes(true)}
+                        >
+                          Register boxes
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={Plus}
+                        to={`/admin/storage/items?new=1&accessionId=${a.id}`}
+                      >
+                        Register physical item
+                      </Button>
+                    </>
+                  )
                 }
               />
               <ul className="divide-y divide-line">
@@ -482,6 +619,7 @@ export default function AccessionDetailPage() {
               )}
             </Card>
           )}
+          {registerBoxes && <RegisterBoxesDialog accessionId={a.id} onClose={() => setRegisterBoxes(false)} />}
           {tab === 'documents' && (
             <Card>
               <CardHeader title="Supporting documents" />
@@ -505,23 +643,39 @@ export default function AccessionDetailPage() {
               <ul className="divide-y divide-line">
                 {a.documents.map((d) => (
                   <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                    <span>
-                      <span className="font-semibold">{d.originalFilename}</span>
+                    <span className="min-w-0">
+                      <button
+                        type="button"
+                        className="font-semibold text-left text-brand-700 hover:underline [overflow-wrap:anywhere]"
+                        onClick={() => setPreviewDoc(d)}
+                      >
+                        {d.originalFilename}
+                      </button>
                       <span className="block text-xs text-ink-soft">
                         {fmtBytes(d.sizeBytes)} · {fmtDateTime(d.createdAt)}
                       </span>
                     </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={FileDown}
-                      onClick={() => download(`/accessions/${id}/documents/${d.id}`)}
-                    >
-                      Download
-                    </Button>
+                    <span className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="secondary" icon={Eye} onClick={() => setPreviewDoc(d)}>
+                        Preview
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={FileDown}
+                        onClick={() => download(`/accessions/${id}/documents/${d.id}`)}
+                      >
+                        Download
+                      </Button>
+                    </span>
                   </li>
                 ))}
               </ul>
+              <DocumentPreview
+                doc={previewDoc}
+                basePath={`/accessions/${id}/documents`}
+                onClose={() => setPreviewDoc(null)}
+              />
             </Card>
           )}
           {tab === 'history' && (
@@ -581,12 +735,15 @@ export default function AccessionDetailPage() {
         tone={action === 'reject' ? 'danger' : 'primary'}
         loading={act.isPending}
         requireReason={['query', 'reject'].includes(action) ? true : 'optional'}
+        reasonLabel={action === 'query' ? 'What the officer needs to complete or correct' : undefined}
         description={
-          action === 'approve'
-            ? `${Object.values(decisions).filter((d) => d === 'accepted').length} of ${a.items.length} items will be accepted.`
-            : action === 'submit' && a.missing.length
-              ? `Missing information will be flagged to the approver: ${a.missing.map(humanize).join(', ')}`
-              : undefined
+          action === 'recall'
+            ? 'The accession goes back to draft so you can complete it, then submit it again. Approvers are told.'
+            : action === 'approve'
+              ? `${Object.values(decisions).filter((d) => d === 'accepted').length} of ${a.items.length} items will be accepted.`
+              : action === 'submit' && a.missing.length
+                ? `Missing information will be flagged to the approver: ${a.missing.map(humanize).join(', ')}`
+                : undefined
         }
         onConfirm={({ reason }) =>
           act.mutate({
@@ -606,7 +763,15 @@ export default function AccessionDetailPage() {
         loading={q.isPending}
         onConfirm={({ reason }) => q.mutate({ quarantine: quarantine === 'place', reason })}
       />
-      <EditDialog a={a} open={edit} onClose={() => setEdit(false)} />
+      <EditDialog
+        a={a}
+        open={edit}
+        focus={editFocus}
+        onClose={() => {
+          setEdit(false);
+          setEditFocus([]);
+        }}
+      />
       <Dialog
         open={colOpen}
         onClose={() => setColOpen(false)}

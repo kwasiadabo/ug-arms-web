@@ -47,10 +47,11 @@ export async function downloadAsset(assetId) {
  * Renders a PDF page by page on a canvas with paging and zoom. Script evaluation inside the PDF is disabled.
  *
  * @param {object} props
- * @param {string} props.url Delivery link.
+ * @param {string} [props.url] Delivery link.
+ * @param {ArrayBuffer} [props.data] The PDF's bytes, already fetched, instead of a link.
  * @returns {JSX.Element|null}
  */
-function PdfViewer({ url }) {
+export function PdfViewer({ url, data }) {
   const canvasRef = useRef(null);
   const [doc, setDoc] = useState(null);
   const [page, setPage] = useState(1);
@@ -66,7 +67,11 @@ function PdfViewer({ url }) {
           'pdfjs-dist/build/pdf.worker.min.mjs',
           import.meta.url,
         ).toString();
-        task = pdfjs.getDocument({ url, withCredentials: true, isEvalSupported: false });
+        task = pdfjs.getDocument(
+          data
+            ? { data: new Uint8Array(data.slice(0)), isEvalSupported: false }
+            : { url, withCredentials: true, isEvalSupported: false },
+        );
         const d = await task.promise;
         if (!cancelled) {
           setDoc(d);
@@ -80,7 +85,7 @@ function PdfViewer({ url }) {
       cancelled = true;
       task?.destroy?.();
     };
-  }, [url]);
+  }, [url, data]);
   useEffect(() => {
     if (!doc || !canvasRef.current) return undefined;
     let renderTask;

@@ -119,8 +119,10 @@ test('Journey A: accession to publication', async ({ page }) => {
   await dlg.getByRole('button', { name: 'Create draft' }).click();
   await expect(page.getByRole('heading', { name: `E2E transfer ${id}` })).toBeVisible();
   await page.getByRole('button', { name: 'Add line' }).click();
-  await page.getByLabel('Title / description line 1').fill('Registry correspondence files');
-  await page.getByLabel('Identifier line 1').fill(`R-${id}`);
+  const line = page.getByRole('dialog', { name: 'Add an inventory line' });
+  await line.getByLabel(/^Title \/ description/).fill('Registry correspondence files');
+  await line.getByLabel(/^Identifier/).fill(`R-${id}`);
+  await line.getByRole('button', { name: 'Add line' }).click();
   await page.getByRole('button', { name: 'Save inventory' }).click();
   await expect(page.getByText('Inventory saved')).toBeVisible();
   await act(page, 'Submit to the Archives');

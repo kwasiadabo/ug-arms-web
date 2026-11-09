@@ -98,11 +98,16 @@ const STATUS_TONE = {
   restricted: 'amber',
   embargoed: 'violet',
   confidential: 'red',
-  proposed: 'neutral',
+  proposed: 'amber',
   success: 'green',
   failure: 'red',
   denied: 'red',
   warning: 'amber',
+};
+
+// Statuses whose label is not simply their code in words.
+const STATUS_LABEL = {
+  proposed: 'Awaiting approval',
 };
 
 /**
@@ -138,7 +143,7 @@ export function StatusBadge({ status, className }) {
   if (!status) return null;
   return (
     <Badge tone={STATUS_TONE[status] || 'neutral'} className={className}>
-      {humanize(status)}
+      {STATUS_LABEL[status] || humanize(status)}
     </Badge>
   );
 }

@@ -11,6 +11,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
 import { api, errorMessage } from '../../lib/api.js';
 import { useAuth, isStaff } from '../../store/auth.js';
+import { useInstitution } from '../../store/institution.js';
 import { Button, Field, Input, Alert } from '../../components/ui/index.js';
 import { AuthShell } from './AuthShell.jsx';
 
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const setUser = useAuth((s) => s.setUser);
+  const idleMinutes = useInstitution((s) => s.idleTimeoutMinutes);
   const [error, setError] = useState(null);
   const {
     register,
@@ -74,6 +76,11 @@ export default function LoginPage() {
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {!error && params.get('reason') === 'idle' && (
+          <Alert tone="info">
+            You were signed out after {idleMinutes} minutes without activity. Sign in again to continue.
+          </Alert>
+        )}
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="Email" error={errors.email?.message}>
           <Input type="email" autoComplete="username" autoFocus {...register('email')} />

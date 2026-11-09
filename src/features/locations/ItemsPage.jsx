@@ -29,7 +29,8 @@ import {
 import { RecordPicker, TypeAhead } from '../archival-records/Pickers.jsx';
 import { humanize } from '../../utils/format.js';
 
-const TYPES = [
+// Kinds of physical item, as the server accepts them.
+export const ITEM_TYPES = [
   'box',
   'folder',
   'volume',
@@ -165,7 +166,7 @@ function NewItemDialog({ open, onClose, defaults }) {
         </Field>
         <Field label="Type">
           <Select value={f.itemType} onChange={(e) => setF({ ...f, itemType: e.target.value })}>
-            {TYPES.map((t) => (
+            {ITEM_TYPES.map((t) => (
               <option key={t} value={t}>
                 {humanize(t)}
               </option>

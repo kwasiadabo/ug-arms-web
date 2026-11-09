@@ -10,6 +10,7 @@ import { ShieldAlert, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
 import { useApi, useApiMutation, patch } from '../../lib/query.js';
 import { useQueryParams } from '../../hooks/useQueryParams.js';
 import { useCan } from '../../hooks/useCan.js';
+import { FitTable } from '../../components/tables/FitTable.jsx';
 import { PageHeader } from '../../components/layout/PageHeader.jsx';
 import { DataTable } from '../../components/tables/DataTable.jsx';
 import { StatCard } from '../../components/feedback/StatCard.jsx';
@@ -206,66 +207,70 @@ export default function PreservationPage() {
             title="Format registry"
             description="Drives upload validation (formats not accepted are rejected) and risk classification."
           />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-canvas/70 text-xs uppercase text-ink-soft">
-                <tr>
-                  <th className="px-4 py-2 text-left">Format</th>
-                  <th className="px-4 py-2 text-left">Media type</th>
-                  <th className="px-4 py-2 text-left">Category</th>
-                  <th className="px-4 py-2 text-left">Risk</th>
-                  <th className="px-4 py-2 text-left">Accepted</th>
-                  <th className="px-4 py-2 text-left">Holdings</th>
+          <FitTable watch={formats.data?.data.length}>
+            <thead className="bg-canvas/70 text-xs uppercase text-ink-soft">
+              <tr>
+                <th className="px-4 py-2 text-left">Format</th>
+                <th className="px-4 py-2 text-left">Media type</th>
+                <th className="px-4 py-2 text-left">Category</th>
+                <th className="px-4 py-2 text-left">Risk</th>
+                <th className="px-4 py-2 text-left">Accepted</th>
+                <th className="px-4 py-2 text-left">Holdings</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {formats.data?.data.map((f) => (
+                <tr key={f.id}>
+                  <td data-label="Format" className="px-4 py-2 font-semibold">
+                    {f.name}
+                    <span className="block text-xs font-normal text-ink-soft">.{f.extensions.join(', .')}</span>
+                  </td>
+                  <td data-label="Media type" className="px-4 py-2 font-mono text-xs">
+                    {f.mediaType}
+                  </td>
+                  <td data-label="Category" className="px-4 py-2">
+                    {humanize(f.category)}
+                  </td>
+                  <td data-label="Risk" className="px-4 py-2">
+                    {can('preservation.manage') ? (
+                      <select
+                        aria-label={`Risk for ${f.name}`}
+                        value={f.riskLevel}
+                        onChange={(e) => updateFormat.mutate({ id: f.id, riskLevel: e.target.value })}
+                        className="h-8 rounded-md border border-line px-1.5"
+                      >
+                        {['low', 'medium', 'high'].map((r) => (
+                          <option key={r} value={r}>
+                            {humanize(r)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      humanize(f.riskLevel)
+                    )}
+                  </td>
+                  <td data-label="Accepted" className="px-4 py-2">
+                    {can('preservation.manage') ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Accept ${f.name}`}
+                        className="accent-brand-700"
+                        checked={f.isAcceptedForIngest}
+                        onChange={(e) => updateFormat.mutate({ id: f.id, isAcceptedForIngest: e.target.checked })}
+                      />
+                    ) : f.isAcceptedForIngest ? (
+                      'Yes'
+                    ) : (
+                      'No'
+                    )}
+                  </td>
+                  <td data-label="Holdings" className="px-4 py-2 tabular-nums">
+                    {s?.formats[f.mediaType] || 0}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {formats.data?.data.map((f) => (
-                  <tr key={f.id}>
-                    <td className="px-4 py-2 font-semibold">
-                      {f.name}
-                      <span className="block text-xs font-normal text-ink-soft">.{f.extensions.join(', .')}</span>
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs">{f.mediaType}</td>
-                    <td className="px-4 py-2">{humanize(f.category)}</td>
-                    <td className="px-4 py-2">
-                      {can('preservation.manage') ? (
-                        <select
-                          aria-label={`Risk for ${f.name}`}
-                          value={f.riskLevel}
-                          onChange={(e) => updateFormat.mutate({ id: f.id, riskLevel: e.target.value })}
-                          className="h-8 rounded-md border border-line px-1.5"
-                        >
-                          {['low', 'medium', 'high'].map((r) => (
-                            <option key={r} value={r}>
-                              {humanize(r)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        humanize(f.riskLevel)
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {can('preservation.manage') ? (
-                        <input
-                          type="checkbox"
-                          aria-label={`Accept ${f.name}`}
-                          className="accent-brand-700"
-                          checked={f.isAcceptedForIngest}
-                          onChange={(e) => updateFormat.mutate({ id: f.id, isAcceptedForIngest: e.target.checked })}
-                        />
-                      ) : f.isAcceptedForIngest ? (
-                        'Yes'
-                      ) : (
-                        'No'
-                      )}
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">{s?.formats[f.mediaType] || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </FitTable>
         </Card>
       )}
     </div>

@@ -76,7 +76,7 @@ export default function DigitisationPage() {
     { enabled: p.tab === 'batches' },
   );
   const create = useApiMutation((b) => post('/digitisation/projects', b), {
-    success: 'Project proposed',
+    success: 'Project created',
     invalidate: ['digitisation-projects'],
     onSuccess: (r) => navigate(`/admin/digitisation/projects/${r.data.id}`),
   });
@@ -141,7 +141,7 @@ export default function DigitisationPage() {
         actions={
           can('digitisation.manage') && (
             <Button icon={Plus} onClick={() => setOpen(true)}>
-              Propose project
+              Create project
             </Button>
           )
         }
@@ -222,7 +222,7 @@ export default function DigitisationPage() {
         open={open}
         onClose={() => setOpen(false)}
         size="lg"
-        title="Propose a digitisation project"
+        title="Create a digitisation project"
         description="An approver must authorise the project before batches can be created."
         footer={
           <>
@@ -243,7 +243,7 @@ export default function DigitisationPage() {
                 })
               }
             >
-              Propose
+              Create project
             </Button>
           </>
         }

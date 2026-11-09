@@ -71,6 +71,62 @@
   }
 }
 
+/*
+ * Stacked tables (see hooks/useStackedTable.js): when a table's columns do not fit its container, each row becomes a
+ * block of "Column: value" pairs instead of scrolling sideways. Cells take their label from data-label; a cell
+ * without one (actions, selection) spans the row. Outside the layers on purpose, so these rules win over the cells'
+ * padding utilities while a table is stacked, and only then.
+ */
+table.table-stacked,
+table.table-stacked tbody,
+table.table-stacked tr,
+table.table-stacked td {
+  display: block;
+  width: 100%;
+}
+table.table-stacked thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* A row's pairs flow into as many columns as fit: two or three on a laptop, one on a phone. */
+table.table-stacked tr {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  column-gap: 1.5rem;
+  padding: 0.75rem 1rem;
+}
+table.table-stacked td {
+  padding: 0.2rem 0;
+}
+table.table-stacked td:not([data-label]) {
+  grid-column: 1 / -1;
+}
+table.table-stacked td[data-label] {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 40%) minmax(0, 1fr);
+  gap: 0.75rem;
+  justify-items: start;
+  overflow-wrap: anywhere;
+}
+table.table-stacked td[data-label]::before {
+  content: attr(data-label);
+  padding-top: 0.1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+/* Column widths set for the wide layout (min-w-[240px] and the like) would push a stacked row past the page. */
+table.table-stacked td[data-label] > * {
+  min-width: 0;
+  max-width: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

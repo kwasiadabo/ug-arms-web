@@ -1,6 +1,8 @@
 /**
  * Data table used by list pages: server-side paging and sorting, column visibility remembered per table in this
- * browser, optional row selection with bulk actions, and loading, error and empty states.
+ * browser, optional row selection with bulk actions, and loading, error and empty states. When the columns do not
+ * fit the page, each row is shown as a stacked block of "Column: value" pairs instead of scrolling sideways, with a
+ * "Sort by" control in place of the column headers.
  *
  * @author Kwasi Adabo Boakye
  */
@@ -9,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3 } from 'lucide-react';
 import { Button, Skeleton, EmptyState, ErrorState, cn } from '../ui/index.js';
+import { useStackedTable } from '../../hooks/useStackedTable.js';
 
 /**
  * Renders a page of rows. Changes to paging and sorting are reported through `onChange`, so the state can live in
@@ -112,6 +115,18 @@ export function DataTable({
   });
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const selected = table.getSelectedRowModel().rows.map((r) => r.original);
+  const fit = useStackedTable(`${data.length}:${loading}:${JSON.stringify(visibility)}`);
+  const sortable = table
+    .getVisibleLeafColumns()
+    .filter((c) => c.columnDef.enableSorting !== false && c.columnDef.sortKey);
+
+  /**
+   * Returns a column's name for the stacked layout, or undefined for columns without a text header (selection).
+   *
+   * @param {import('@tanstack/react-table').Column} c The column.
+   * @returns {string|undefined}
+   */
+  const labelOf = (c) => (typeof c.columnDef.header === 'string' ? c.columnDef.header : c.columnDef.meta?.label);
 
   /**
    * Sorts by a column, ascending first, then switches direction on repeated clicks.
@@ -128,6 +143,31 @@ export function DataTable({
       {(toolbar || id) && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
           <div className="flex flex-1 flex-wrap items-center gap-2">{toolbar}</div>
+          {fit.stacked && sortable.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-ink-soft">
+              Sort by
+              <select
+                className="rounded-md border border-line bg-white px-1.5 py-1 text-xs text-ink"
+                value={sort && order ? `${sort}:${order}` : ''}
+                onChange={(e) => {
+                  const [s, o] = e.target.value.split(':');
+                  onChange?.({ sort: s, order: o });
+                }}
+              >
+                {!sortable.some((c) => c.columnDef.sortKey === sort) && (
+                  <option value={sort && order ? `${sort}:${order}` : ''}>Default order</option>
+                )}
+                {sortable.flatMap((c) => [
+                  <option key={`${c.id}-asc`} value={`${c.columnDef.sortKey}:asc`}>
+                    {labelOf(c)} (ascending)
+                  </option>,
+                  <option key={`${c.id}-desc`} value={`${c.columnDef.sortKey}:desc`}>
+                    {labelOf(c)} (descending)
+                  </option>,
+                ])}
+              </select>
+            </label>
+          )}
           <div className="relative">
             <Button
               variant="ghost"
@@ -168,8 +208,8 @@ export function DataTable({
           {bulkActions(selected, () => setSelection({}))}
         </div>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+      <div ref={fit.containerRef} className="overflow-x-auto">
+        <table ref={fit.tableRef} className={cn('w-full text-left text-sm', fit.className)}>
           <thead className="bg-canvas/70 text-xs uppercase tracking-wide text-ink-soft">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -232,7 +272,11 @@ export function DataTable({
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className={cn('px-4 py-3 align-top', cell.column.columnDef.cellClassName)}>
+                    <td
+                      key={cell.id}
+                      data-label={labelOf(cell.column)}
+                      className={cn('px-4 py-3 align-top', cell.column.columnDef.cellClassName)}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

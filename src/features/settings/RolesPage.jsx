@@ -24,8 +24,9 @@ import {
 import { humanize } from '../../utils/format.js';
 
 /**
- * Shows every role against every permission. Users who manage roles can change a role's permissions and save them,
- * or create a new role. Every permission is enforced by the server, and changes to sensitive roles are flagged in
+ * Shows every role against every permission, or only the roles chosen under "Show roles", so a comparison of a few
+ * roles fits the page without scrolling sideways. Users who manage roles can change a role's permissions and save
+ * them, or create a new role. Every permission is enforced by the server, and changes to sensitive roles are flagged in
  * the audit trail.
  *
  * @returns {JSX.Element}
@@ -36,6 +37,7 @@ export default function RolesPage() {
   const perms = useApi('permissions', '/roles/permissions');
   const [draft, setDraft] = useState({});
   const [newRole, setNewRole] = useState(null);
+  const [shown, setShown] = useState(null);
   const save = useApiMutation(({ id, permissionIds }) => patch(`/roles/${id}`, { permissionIds }), {
     success: 'Role permissions saved',
     invalidate: ['roles'],
@@ -59,6 +61,8 @@ export default function RolesPage() {
   if (roles.isLoading || perms.isLoading) return <PageLoader />;
   if (roles.error) return <ErrorState error={roles.error} />;
   const list = roles.data.data;
+  // Roles shown as columns: all by default, or the ones chosen to compare, so the matrix can fit the page.
+  const shownRoles = shown ? list.filter((r) => shown.includes(r.id)) : list;
 
   /**
    * Tells whether a role currently has a permission in the matrix, including unsaved changes.
@@ -98,6 +102,29 @@ export default function RolesPage() {
           You can view the matrix. Changing it requires the roles.manage permission.
         </Alert>
       )}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Show roles">
+        <span className="font-semibold text-ink-soft">Show roles:</span>
+        <Button size="sm" variant={shown ? 'ghost' : 'secondary'} aria-pressed={!shown} onClick={() => setShown(null)}>
+          All
+        </Button>
+        {list.map((r) => {
+          const on = shown?.includes(r.id);
+          return (
+            <Button
+              key={r.id}
+              size="sm"
+              variant={on ? 'secondary' : 'ghost'}
+              aria-pressed={Boolean(on)}
+              onClick={() => {
+                const next = on ? shown.filter((x) => x !== r.id) : [...(shown || []), r.id];
+                setShown(next.length ? next : null);
+              }}
+            >
+              {r.name}
+            </Button>
+          );
+        })}
+      </div>
       <Card className="overflow-hidden">
         <div className="max-h-[75vh] overflow-auto">
           <table className="w-full text-sm">
@@ -106,7 +133,7 @@ export default function RolesPage() {
                 <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-xs uppercase text-ink-soft">
                   Permission
                 </th>
-                {list.map((r) => (
+                {shownRoles.map((r) => (
                   <th key={r.id} className="min-w-[110px] px-2 py-3 text-center align-bottom">
                     <span className="block text-xs font-bold leading-tight">{r.name}</span>
                     <span className="block text-[11px] font-normal text-ink-soft">
@@ -136,7 +163,7 @@ export default function RolesPage() {
               {grouped.map(([g, ps]) => [
                 <tr key={g} className="bg-canvas">
                   <td
-                    colSpan={list.length + 1}
+                    colSpan={shownRoles.length + 1}
                     className="sticky left-0 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-brand-800"
                   >
                     {humanize(g)}
@@ -145,7 +172,7 @@ export default function RolesPage() {
                 ...ps.map((p) => (
                   <tr key={p.id} className="border-b border-line">
                     <td className="sticky left-0 bg-white px-4 py-1.5 font-mono text-xs">{p.code}</td>
-                    {list.map((r) => (
+                    {shownRoles.map((r) => (
                       <td key={r.id} className="text-center">
                         <input
                           type="checkbox"

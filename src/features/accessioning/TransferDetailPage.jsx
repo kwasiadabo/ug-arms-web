@@ -7,12 +7,25 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { Plus, Trash2, Upload, Save, FileDown, PackagePlus, Paperclip } from 'lucide-react';
+import {
+  Eye,
+  Plus,
+  Pencil,
+  Trash2,
+  Upload,
+  Save,
+  FileDown,
+  FileSpreadsheet,
+  PackagePlus,
+  Paperclip,
+} from 'lucide-react';
 import { api, download, errorMessage } from '../../lib/api.js';
 import { useApi, useApiMutation, post, put, patch } from '../../lib/query.js';
 import { useCan } from '../../hooks/useCan.js';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges.js';
+import { useStackedTable } from '../../hooks/useStackedTable.js';
 import { PageHeader } from '../../components/layout/PageHeader.jsx';
+import { DocumentPreview } from '../../components/viewer/DocumentPreview.jsx';
 import { Timeline } from '../../components/feedback/Timeline.jsx';
 import {
   Button,
@@ -33,20 +46,42 @@ import {
   Tabs,
 } from '../../components/ui/index.js';
 import { fmtDate, fmtDateTime, humanize, fmtBytes } from '../../utils/format.js';
+import { identifierPrefix, nextIdentifier } from './inventoryIdentifier.js';
+import { InventoryLineDialog } from './InventoryLineDialog.jsx';
+import { InventoryLineView } from './InventoryLineView.jsx';
 
+// Every field of an inventory line, in form and template order.
 const COLS = [
-  ['sourceIdentifier', 'Identifier', 'min-w-36'],
-  ['title', 'Title / description', 'min-w-[260px]'],
-  ['dateExpression', 'Dates', 'min-w-28'],
-  ['dateStart', 'From', 'min-w-32'],
-  ['dateEnd', 'To', 'min-w-32'],
-  ['format', 'Format', 'min-w-28'],
-  ['quantity', 'Qty', 'min-w-16'],
-  ['extent', 'Extent', 'min-w-28'],
-  ['boxNumber', 'Box', 'min-w-20'],
-  ['condition', 'Condition', 'min-w-28'],
-  ['confidentiality', 'Confidentiality', 'min-w-32'],
-  ['notes', 'Notes', 'min-w-[160px]'],
+  ['sourceIdentifier', 'Identifier'],
+  ['title', 'Title / description'],
+  ['dateExpression', 'Dates'],
+  ['dateStart', 'From'],
+  ['dateEnd', 'To'],
+  ['format', 'Format'],
+  ['quantity', 'Qty'],
+  ['extent', 'Extent'],
+  ['boxNumber', 'Box'],
+  ['condition', 'Condition'],
+  ['confidentiality', 'Confidentiality'],
+  ['notes', 'Notes'],
+];
+
+/**
+ * Dates of a line for the table: as written when given, otherwise the From–To range.
+ *
+ * @param {Record<string, string>} r The line.
+ * @returns {string}
+ */
+const datesOf = (r) => r.dateExpression || [r.dateStart, r.dateEnd].filter(Boolean).join(' – ');
+
+// The columns the table shows, so it fits the page; every field is in the line's dialog.
+const TABLE_COLS = [
+  ['sourceIdentifier', 'Identifier', (r) => r.sourceIdentifier, 'whitespace-nowrap'],
+  ['title', 'Title / description', (r) => r.title, 'w-full min-w-[12rem]'],
+  ['dates', 'Dates', datesOf, 'whitespace-nowrap'],
+  ['quantity', 'Qty', (r) => r.quantity, 'text-right'],
+  ['extent', 'Extent', (r) => r.extent, ''],
+  ['boxNumber', 'Box', (r) => r.boxNumber, ''],
 ];
 
 /**
@@ -57,9 +92,12 @@ const COLS = [
 const blankRow = () => Object.fromEntries(COLS.map(([k]) => [k, '']));
 
 /**
- * Spreadsheet-like editor of the inventory. Lines can be edited directly while the transfer is editable, or
- * imported from a CSV or Excel file with a preview of validation problems before saving. The user is warned before
- * leaving with unsaved changes.
+ * Inventory of a transfer: a table of the lines and, while the transfer is editable, a form dialog that shows every
+ * field of one line at once for adding or editing it (a new line starts with the next identifier in the unit's
+ * sequence, such as HIST/004, which can be changed). Lines can also be imported from a CSV or Excel file with a
+ * preview of validation problems before saving; a blank Excel or CSV
+ * template with every column can be downloaded to fill in offline. The user is warned before leaving with unsaved
+ * changes.
  *
  * @param {object} props
  * @param {object} props.transfer The transfer with its inventory lines.
@@ -89,15 +127,34 @@ function InventoryEditor({ transfer, editable }) {
     { onSuccess: (d) => setImportResult(d) },
   );
 
+  // The line open in the form: { index: null, line } for a new line, { index, line } for an existing one.
+  const [editing, setEditing] = useState(null);
+  // Index of the line open in the read-only view while the transfer is under review, or null.
+  const [viewing, setViewing] = useState(null);
+  const fit = useStackedTable(`${rows.length}:${editable}`);
+  const prefix = identifierPrefix(transfer.originatingUnit?.code);
+
+  /** Opens the form for a new line, with the next identifier in the unit's sequence. */
+  const addLine = () =>
+    setEditing({
+      index: null,
+      line: {
+        ...blankRow(),
+        sourceIdentifier: nextIdentifier(
+          prefix,
+          rows.map((x) => x.sourceIdentifier),
+        ),
+      },
+    });
+
   /**
-   * Changes one cell of the inventory and marks the editor as having unsaved changes.
+   * Stores a line accepted by the form, appending it or replacing the one being edited, and marks the editor as
+   * having unsaved changes.
    *
-   * @param {number} i Line index.
-   * @param {string} k Column key.
-   * @param {string} v New value.
+   * @param {Record<string, string>} line The accepted line.
    */
-  const update = (i, k, v) => {
-    setRows((r) => r.map((row, j) => (j === i ? { ...row, [k]: v } : row)));
+  const acceptLine = (line) => {
+    setRows((r) => (editing.index === null ? [...r, line] : r.map((row, j) => (j === editing.index ? line : row))));
     setDirty(true);
   };
 
@@ -115,7 +172,13 @@ function InventoryEditor({ transfer, editable }) {
     <Card>
       <CardHeader
         title="Inventory"
-        description={`${rows.length} line${rows.length === 1 ? '' : 's'}. ${editable ? 'Edit directly or import a CSV/Excel inventory.' : 'Read-only at this stage.'}`}
+        description={`${rows.length} line${rows.length === 1 ? '' : 's'}. ${
+          !editable
+            ? 'Read-only at this stage.'
+            : dirty
+              ? 'Unsaved changes: choose Save inventory to keep them.'
+              : 'Add lines one at a time, or import a CSV/Excel inventory.'
+        }`}
         actions={
           editable && (
             <>
@@ -128,15 +191,7 @@ function InventoryEditor({ transfer, editable }) {
                   onChange={(e) => e.target.files[0] && apply.mutate(e.target.files[0])}
                 />
               </label>
-              <Button
-                size="sm"
-                variant="secondary"
-                icon={Plus}
-                onClick={() => {
-                  setRows((r) => [...r, blankRow()]);
-                  setDirty(true);
-                }}
-              >
+              <Button size="sm" variant="secondary" icon={Plus} onClick={addLine}>
                 Add line
               </Button>
               <Button
@@ -152,6 +207,28 @@ function InventoryEditor({ transfer, editable }) {
           )
         }
       />
+      {editable && (
+        <CardBody className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-3 text-sm text-ink-soft">
+          <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Prefer to work offline? Download a template with all the columns, fill it in, then use Import.</span>
+          <span className="flex gap-3">
+            <button
+              type="button"
+              className="font-semibold text-brand-700 hover:underline"
+              onClick={() => download('/transfers/inventory-template?format=xlsx')}
+            >
+              Excel template
+            </button>
+            <button
+              type="button"
+              className="font-semibold text-brand-700 hover:underline"
+              onClick={() => download('/transfers/inventory-template?format=csv')}
+            >
+              CSV template
+            </button>
+          </span>
+        </CardBody>
+      )}
       {save.error?.response?.data?.error?.details && (
         <Alert tone="danger" className="m-4">
           {save.error.response.data.error.details.map((d) => (
@@ -161,48 +238,49 @@ function InventoryEditor({ transfer, editable }) {
           ))}
         </Alert>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-max text-sm">
+      <div ref={fit.containerRef} className="overflow-x-auto">
+        <table ref={fit.tableRef} className={`w-full text-sm ${fit.className}`}>
           <thead className="bg-canvas/70 text-xs uppercase tracking-wide text-ink-soft">
             <tr>
               <th className="px-2 py-2">#</th>
-              {COLS.map(([k, l, w]) => (
-                <th key={k} className={`px-2 py-2 text-left font-semibold ${w}`}>
+              <th className="px-2 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
+              {TABLE_COLS.map(([k, l]) => (
+                <th key={k} className="whitespace-nowrap px-2 py-2 text-left font-semibold">
                   {l}
                 </th>
               ))}
               {!editable && <th className="px-2 py-2 text-left">Decision</th>}
-              {editable && <th />}
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r, i) => (
-              <tr key={i} className="align-top">
-                <td className="px-2 py-1.5 text-xs text-ink-soft">{i + 1}</td>
-                {COLS.map(([k, l]) => (
-                  <td key={k} className="px-1 py-1">
-                    {editable ? (
-                      <input
-                        aria-label={`${l} line ${i + 1}`}
-                        value={r[k]}
-                        onChange={(e) => update(i, k, e.target.value)}
-                        className="h-8 w-full rounded-md border border-transparent bg-transparent px-1.5 hover:border-line focus:border-brand-600 focus:bg-white focus:outline-none"
-                      />
-                    ) : (
-                      <span className="block px-1.5 py-1">{r[k] || ''}</span>
-                    )}
-                  </td>
-                ))}
+              <tr
+                key={i}
+                className="cursor-pointer align-top hover:bg-canvas/60"
+                onClick={() => (editable ? setEditing({ index: i, line: r }) : setViewing(i))}
+              >
+                <td data-label="Line" className="px-2 py-2 text-xs text-ink-soft">
+                  {i + 1}
+                </td>
                 {!editable && (
-                  <td className="px-2 py-1.5">
-                    <StatusBadge status={transfer.items[i]?.decision} />
-                    {transfer.items[i]?.decisionNote && (
-                      <p className="text-xs text-ink-soft">{transfer.items[i].decisionNote}</p>
-                    )}
+                  <td className="px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                    <Button size="icon" variant="ghost" aria-label={`View line ${i + 1}`} onClick={() => setViewing(i)}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
                   </td>
                 )}
                 {editable && (
-                  <td className="px-1 py-1">
+                  <td className="whitespace-nowrap px-1 py-1" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`Edit line ${i + 1}`}
+                      onClick={() => setEditing({ index: i, line: r })}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -216,12 +294,43 @@ function InventoryEditor({ transfer, editable }) {
                     </Button>
                   </td>
                 )}
+                {TABLE_COLS.map(([k, l, value, cls]) => (
+                  <td key={k} data-label={l} className={`px-2 py-2 ${cls}`}>
+                    <span className="line-clamp-2" title={String(value(r) || '') || undefined}>
+                      {value(r) || ''}
+                    </span>
+                  </td>
+                ))}
+                {!editable && (
+                  <td data-label="Decision" className="px-2 py-1.5">
+                    <StatusBadge status={transfer.items[i]?.decision} />
+                    {transfer.items[i]?.decisionNote && (
+                      <p className="text-xs text-ink-soft">{transfer.items[i].decisionNote}</p>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
-        {!rows.length && <p className="px-5 py-8 text-center text-sm text-ink-soft">No inventory lines yet.</p>}
+        {!rows.length && (
+          <p className="px-5 py-8 text-center text-sm text-ink-soft">
+            No inventory lines yet.{editable && ' Choose Add line, or import a spreadsheet.'}
+          </p>
+        )}
       </div>
+      {!editable && <InventoryLineView items={transfer.items} index={viewing} onChange={setViewing} />}
+      {editing && (
+        <InventoryLineDialog
+          open
+          onClose={() => setEditing(null)}
+          line={editing.line}
+          lineNumber={editing.index === null ? null : editing.index + 1}
+          otherIdentifiers={rows.filter((_, j) => j !== editing.index).map((x) => x.sourceIdentifier)}
+          prefix={prefix}
+          onSubmit={acceptLine}
+        />
+      )}
       <Dialog
         open={Boolean(importResult)}
         onClose={() => setImportResult(null)}
@@ -389,12 +498,13 @@ function DecisionDialog({ open, onClose, transfer }) {
 export default function TransferDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { can } = useCan();
+  const { user, can } = useCan();
   const [tab, setTab] = useState('inventory');
   const [action, setAction] = useState(null);
   const [decide, setDecide] = useState(false);
   const [comment, setComment] = useState('');
   const [files, setFiles] = useState([]);
+  const [previewDoc, setPreviewDoc] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [details, setDetails] = useState({});
   const { data, isLoading, error, refetch } = useApi(['transfer', id], `/transfers/${id}`);
@@ -448,6 +558,9 @@ export default function TransferDetailPage() {
           <>
             <StatusBadge status={t.status} />
             <span className="text-sm text-ink-soft">{t.originatingUnit?.name}</span>
+            {t.submittedOnBehalf && (
+              <span className="text-xs text-ink-soft">Prepared on behalf by {t.submittedBy?.fullName}</span>
+            )}
             {t.revision > 0 && <span className="text-xs text-ink-soft">Revision {t.revision}</span>}
           </>
         }
@@ -487,6 +600,14 @@ export default function TransferDetailPage() {
           resubmit.
         </Alert>
       )}
+      {t.submittedOnBehalf &&
+        t.submittedById === user.id &&
+        can('transfer.review') &&
+        ['submitted', 'resubmitted', 'under_review'].includes(t.status) && (
+          <Alert tone="info" className="mb-4" title={`You submitted this on behalf of ${t.originatingUnit?.name}`}>
+            Another reviewer will review and decide on it. You will be notified of any query or decision.
+          </Alert>
+        )}
       {editable && t.validation.length > 0 && (
         <Alert tone="info" className="mb-4" title="Complete before submitting">
           {t.validation.slice(0, 8).map((v) => (
@@ -541,24 +662,40 @@ export default function TransferDetailPage() {
               <ul className="divide-y divide-line">
                 {t.documents.map((d) => (
                   <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                    <span>
-                      <span className="font-semibold">{d.originalFilename}</span>
+                    <span className="min-w-0">
+                      <button
+                        type="button"
+                        className="font-semibold text-left text-brand-700 hover:underline [overflow-wrap:anywhere]"
+                        onClick={() => setPreviewDoc(d)}
+                      >
+                        {d.originalFilename}
+                      </button>
                       <span className="block text-xs text-ink-soft">
                         {d.mediaType} · {fmtBytes(d.sizeBytes)} · SHA-256 {d.sha256?.slice(0, 12)}… ·{' '}
                         {fmtDateTime(d.createdAt)}
                       </span>
                     </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={FileDown}
-                      onClick={() => download(`/transfers/${id}/documents/${d.id}`)}
-                    >
-                      Download
-                    </Button>
+                    <span className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="secondary" icon={Eye} onClick={() => setPreviewDoc(d)}>
+                        Preview
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={FileDown}
+                        onClick={() => download(`/transfers/${id}/documents/${d.id}`)}
+                      >
+                        Download
+                      </Button>
+                    </span>
                   </li>
                 ))}
               </ul>
+              <DocumentPreview
+                doc={previewDoc}
+                basePath={`/transfers/${id}/documents`}
+                onClose={() => setPreviewDoc(null)}
+              />
               {!t.documents.length && <CardBody className="text-sm text-ink-soft">No documents attached.</CardBody>}
             </Card>
           )}
@@ -616,6 +753,12 @@ export default function TransferDetailPage() {
               <MetaList
                 columns={1}
                 items={[
+                  {
+                    label: 'Prepared by',
+                    value: t.submittedBy
+                      ? `${t.submittedBy.fullName}${t.submittedOnBehalf ? ` (on behalf of ${t.originatingUnit?.name})` : ''}`
+                      : null,
+                  },
                   { label: 'Contact', value: [t.contactName, t.contactEmail].filter(Boolean).join(' · ') },
                   { label: 'Proposed transfer date', value: fmtDate(t.proposedTransferDate) },
                   { label: 'Transfer authority', value: t.transferAuthority },
