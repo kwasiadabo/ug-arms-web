@@ -1,7 +1,19 @@
 # Serves the React build and proxies /api to the API containers. Terminate TLS in front of this
-# (or add a TLS server block) in production; set COOKIE_SECURE=true and TRUST_PROXY=true on the API.
+# (or add a TLS server block) in production; set COOKIE_SECURE=true and TRUST_PROXY on the API (2 when another proxy,
+# such as Dokploy's Traefik, sits in front of this one).
 # The nginx image fills in ${API_UPSTREAM} (host:port of the API, default api:4200) when the container starts.
-upstream ugarms_api { server ${API_UPSTREAM}; keepalive 16; }
+
+# The API's address is looked up through Docker's DNS on each request (cached for 10 seconds) rather than once at
+# start-up, so the site still starts and serves pages when the API is down, misnamed or deployed later; only /api
+# requests fail, with a 502 naming the cause, until it is reachable.
+resolver 127.0.0.11 valid=10s ipv6=off;
+resolver_timeout 5s;
+
+# Keep the original scheme when a proxy in front (Traefik) already terminated HTTPS.
+map $http_x_forwarded_proto $forwarded_proto {
+  default $http_x_forwarded_proto;
+  ""      $scheme;
+}
 
 server {
   listen 8080;
@@ -13,16 +25,27 @@ server {
   include /etc/nginx/snippets/security-headers.conf;
 
   location /api/ {
-    proxy_pass http://ugarms_api;
+    set $api_upstream ${API_UPSTREAM};
+    proxy_pass http://$api_upstream;
+    proxy_intercept_errors off;
+    error_page 502 504 = @api_unreachable;
     proxy_http_version 1.1;
     proxy_set_header Connection "";
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
     proxy_request_buffering off;   # stream large uploads
     proxy_buffering off;           # stream downloads and range requests
     proxy_read_timeout 600s;
+  }
+
+  # The API could not be reached (not running, or API_UPSTREAM does not name it). Plain JSON, so the app shows an error.
+  location @api_unreachable {
+    default_type application/json;
+    add_header Cache-Control "no-store" always;
+    include /etc/nginx/snippets/security-headers.conf;
+    return 502 '{"error":{"code":"API_UNREACHABLE","message":"The web server could not reach the API at ${API_UPSTREAM}. Check that the API is running and that API_UPSTREAM names it."}}';
   }
 
   location /assets/ {
