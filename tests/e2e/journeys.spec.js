@@ -67,6 +67,41 @@ test.describe('Staff workspace', () => {
     await expect(page.getByText('Access not permitted')).toBeVisible();
   });
 
+  test('unsaved inventory lines survive switching tabs and posting a comment until discarded', async ({ page }) => {
+    const id = `E2E${Date.now().toString(36)}`;
+    await login(page, 'records.officer@ugarms.local');
+    await page.goto('/admin/transfers');
+    await page.getByRole('button', { name: 'New transfer' }).click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByLabel(/^Title/).fill(`E2E unsaved inventory ${id}`);
+    await dlg.getByLabel(/Originating unit/).selectOption({ label: 'Office of the Registrar' });
+    await dlg.getByRole('button', { name: 'Create draft' }).click();
+    await expect(page.getByRole('heading', { name: `E2E unsaved inventory ${id}` })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add line' }).click();
+    const line = page.getByRole('dialog', { name: 'Add an inventory line' });
+    await line.getByLabel(/^Title \/ description/).fill(`Unsaved line ${id}`);
+    await line.getByRole('button', { name: 'Add line' }).click();
+    await expect(page.getByRole('tab', { name: /Inventory \(unsaved\)/ })).toBeVisible();
+
+    // Another tab and back: the line is still there.
+    await page.getByRole('tab', { name: /Documents/ }).click();
+    await page.getByRole('tab', { name: /Inventory/ }).click();
+    await expect(page.getByText(`Unsaved line ${id}`)).toBeVisible();
+
+    // Posting a comment reloads the transfer; the unsaved line must not be replaced by the saved inventory.
+    await page.getByLabel('Add a comment').fill('Checking the inventory is kept');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await expect(page.getByText('Comment added')).toBeVisible();
+    await expect(page.getByText(`Unsaved line ${id}`)).toBeVisible();
+
+    // Only a deliberate discard clears it.
+    await page.getByRole('button', { name: 'Discard changes' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Discard changes' }).click();
+    await expect(page.getByText(`Unsaved line ${id}`)).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: /Inventory \(unsaved\)/ })).toHaveCount(0);
+  });
+
   test('researcher signs in and lands on their research area', async ({ page }) => {
     await login(page, 'researcher@ugarms.local');
     await expect(page).toHaveURL(/\/my/);

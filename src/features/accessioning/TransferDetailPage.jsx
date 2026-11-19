@@ -5,7 +5,7 @@
  * @author Kwasi Adabo Boakye
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   Eye,
@@ -96,28 +96,47 @@ const blankRow = () => Object.fromEntries(COLS.map(([k]) => [k, '']));
  * field of one line at once for adding or editing it (a new line starts with the next identifier in the unit's
  * sequence, such as HIST/004, which can be changed). Lines can also be imported from a CSV or Excel file with a
  * preview of validation problems before saving; a blank Excel or CSV
- * template with every column can be downloaded to fill in offline. The user is warned before leaving with unsaved
- * changes.
+ * template with every column can be downloaded to fill in offline. Unsaved changes are kept until they are saved or
+ * discarded with "Discard changes", including while another tab is open or the transfer is reloaded, and the user is
+ * warned before leaving the page with them.
  *
  * @param {object} props
  * @param {object} props.transfer The transfer with its inventory lines.
  * @param {boolean} props.editable Whether the inventory may be changed.
+ * @param {(dirty: boolean) => void} [props.onDirtyChange] Told whenever the editor gains or loses unsaved changes.
  * @returns {JSX.Element}
  */
-function InventoryEditor({ transfer, editable }) {
+function InventoryEditor({ transfer, editable, onDirtyChange }) {
   const [rows, setRows] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+
+  /** Replaces the editor's lines with the saved inventory. */
+  const loadSaved = () => setRows(transfer.items.map((i) => Object.fromEntries(COLS.map(([k]) => [k, i[k] ?? '']))));
+
+  // Follow the saved inventory only while there are no unsaved changes, so reloading the transfer (after uploading a
+  // document or posting a comment, for example) never wipes lines that have not been saved yet.
   useEffect(() => {
-    setRows(transfer.items.map((i) => Object.fromEntries(COLS.map(([k]) => [k, i[k] ?? '']))));
-    setDirty(false);
+    if (!dirtyRef.current) loadSaved();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transfer.items]);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useUnsavedChanges(dirty);
   const save = useApiMutation((items) => put(`/transfers/${transfer.id}/items`, { items }), {
     success: 'Inventory saved',
     invalidate: [['transfer', transfer.id]],
     onSuccess: () => setDirty(false),
   });
+
+  /** Throws away the unsaved changes and goes back to the saved inventory. */
+  const discard = () => {
+    loadSaved();
+    setDirty(false);
+    setConfirmDiscard(false);
+  };
   const apply = useApiMutation(
     async (file) => {
       const fd = new FormData();
@@ -194,6 +213,11 @@ function InventoryEditor({ transfer, editable }) {
               <Button size="sm" variant="secondary" icon={Plus} onClick={addLine}>
                 Add line
               </Button>
+              {dirty && (
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(true)}>
+                  Discard changes
+                </Button>
+              )}
               <Button
                 size="sm"
                 icon={Save}
@@ -385,6 +409,15 @@ function InventoryEditor({ transfer, editable }) {
           <Alert tone="success">No validation errors. Review and save the inventory to keep these rows.</Alert>
         )}
       </Dialog>
+      <ConfirmDialog
+        open={confirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+        title="Discard unsaved changes?"
+        description="The inventory goes back to how it was last saved. Lines added, changed or removed since then are lost."
+        confirmLabel="Discard changes"
+        tone="danger"
+        onConfirm={discard}
+      />
     </Card>
   );
 }
@@ -500,6 +533,7 @@ export default function TransferDetailPage() {
   const navigate = useNavigate();
   const { user, can } = useCan();
   const [tab, setTab] = useState('inventory');
+  const [inventoryDirty, setInventoryDirty] = useState(false);
   const [action, setAction] = useState(null);
   const [decide, setDecide] = useState(false);
   const [comment, setComment] = useState('');
@@ -623,13 +657,20 @@ export default function TransferDetailPage() {
             value={tab}
             onChange={setTab}
             tabs={[
-              { value: 'inventory', label: 'Inventory', count: t.items.length },
+              {
+                value: 'inventory',
+                label: inventoryDirty ? 'Inventory (unsaved)' : 'Inventory',
+                count: t.items.length,
+              },
               { value: 'documents', label: 'Documents', count: t.documents.length },
               { value: 'history', label: 'History' },
               { value: 'revisions', label: 'Submitted versions', count: t.revisions.length },
             ]}
           />
-          {tab === 'inventory' && <InventoryEditor transfer={t} editable={editable} />}
+          {/* Kept mounted while other tabs are open, so unsaved inventory lines survive switching tabs. */}
+          <div hidden={tab !== 'inventory'}>
+            <InventoryEditor transfer={t} editable={editable} onDirtyChange={setInventoryDirty} />
+          </div>
           {tab === 'documents' && (
             <Card>
               <CardHeader

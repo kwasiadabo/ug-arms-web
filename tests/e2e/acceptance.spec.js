@@ -13,7 +13,9 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { login, PASSWORD, uniquePagePng } from './helpers.js';
 
-const API = process.env.E2E_API_URL || 'http://127.0.0.1:5190/api/v1';
+// The API is reached through the same origin as the pages (Vite or Nginx proxies /api), so E2E_BASE_URL alone
+// points the whole suite at the development servers (default) or the Docker stack (http://127.0.0.1:8080).
+const API = process.env.E2E_API_URL || `${process.env.E2E_BASE_URL || 'http://127.0.0.1:5190'}/api/v1`;
 
 /**
  * Returns a short unique suffix for names created during a run.

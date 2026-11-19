@@ -13,6 +13,41 @@ import { AdminLayout } from '../components/layout/AdminLayout.jsx';
 import { RequireAuth, RequireStaff, RequirePerm } from './guards.jsx';
 import { PageLoader, ErrorState, Button } from '../components/ui/index.js';
 
+const RELOAD_KEY = 'ugarms:chunk-reload';
+
+/**
+ * Loads a page's code. If it fails, the usual cause is a new version of the application having been deployed while
+ * this tab was open: the old code files no longer exist on the server. The page is then reloaded once to pick up the
+ * new version. A second failure within a minute is shown as an error instead, so an unreachable server cannot cause
+ * a reload loop.
+ *
+ * @param {() => Promise<object>} factory Dynamic import of the module.
+ * @returns {Promise<object>} The module.
+ */
+async function importOrReload(factory) {
+  try {
+    const mod = await factory();
+    try {
+      sessionStorage.removeItem(RELOAD_KEY);
+    } catch {
+      // Storage unavailable: nothing to clear.
+    }
+    return mod;
+  } catch (err) {
+    try {
+      const last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0;
+      if (Date.now() - last > 60_000) {
+        sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+        window.location.reload();
+        return new Promise(() => {}); // Keep showing the loading placeholder while the page reloads.
+      }
+    } catch {
+      // Storage unavailable: show the error rather than risk reloading repeatedly.
+    }
+    throw err;
+  }
+}
+
 /**
  * Creates a lazily loaded page component from a module, optionally from a named export.
  *
@@ -20,7 +55,8 @@ import { PageLoader, ErrorState, Button } from '../components/ui/index.js';
  * @param {string} [name='default'] Export to use.
  * @returns {import('react').LazyExoticComponent}
  */
-const lazyComponent = (factory, name = 'default') => lazy(() => factory().then((m) => ({ default: m[name] })));
+const lazyComponent = (factory, name = 'default') =>
+  lazy(() => importOrReload(factory).then((m) => ({ default: m[name] })));
 
 /**
  * Builds the element for a route: the page with a loading placeholder, wrapped in a permission check when
