@@ -39,6 +39,7 @@ const STATUS_TONE = {
   planned: 'neutral',
   in_progress: 'blue',
   processing: 'blue',
+  scanning: 'blue',
   quality_review: 'amber',
   rework_required: 'violet',
   completed: 'green',

@@ -82,7 +82,7 @@ function ItemRow({ item, batch, canCapture, canQa, onReview }) {
     },
     {
       success: (r) =>
-        `${r.data.length} file(s) uploaded${r.meta.rejected?.length ? `; ${r.meta.rejected.length} rejected: ${r.meta.rejected[0].error}` : ''}`,
+        `${r.data.length} file(s) received; scanning and storing continue in the background${r.meta.rejected?.length ? `. ${r.meta.rejected.length} rejected: ${r.meta.rejected[0].error}` : ''}`,
       invalidate: inval,
       onSuccess: () => setFiles([]),
     },

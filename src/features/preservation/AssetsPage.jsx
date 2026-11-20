@@ -136,10 +136,12 @@ export default function AssetsPage() {
               label="Status"
               value={p.status}
               onChange={(v) => set({ status: v })}
-              options={['processing', 'available', 'quarantined', 'failed'].map((s) => ({
-                value: s,
-                label: humanize(s),
-              }))}
+              options={['uploaded', 'scanning', 'processing', 'available', 'quarantined', 'rejected', 'failed'].map(
+                (s) => ({
+                  value: s,
+                  label: humanize(s),
+                }),
+              )}
             />
             <FilterSelect
               label="Preservation"

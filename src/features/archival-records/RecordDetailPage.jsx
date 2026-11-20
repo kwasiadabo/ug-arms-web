@@ -48,6 +48,7 @@ import {
   hasMeta,
 } from '../../components/ui/index.js';
 import { fmtDate, fmtDateTime, humanize, fmtBytes } from '../../utils/format.js';
+import { IN_PROGRESS } from '../../utils/assetStatus.js';
 import { ACTION_LABELS, ACCESS_LEVELS, childLevels } from './constants.js';
 import { AuthorityPicker, TermPicker } from './Pickers.jsx';
 import { UploadProgress } from '../../components/forms/UploadProgress.jsx';
@@ -303,7 +304,13 @@ function Assets({ r }) {
   const { can } = useCan();
   const [files, setFiles] = useState([]);
   const [progress, setProgress] = useState(null);
-  const { data, refetch } = useApi(['record-assets', r.id], '/digital-assets', { recordId: r.id, pageSize: 100 });
+  // Refreshes while any file is still being scanned, stored or processed in the background.
+  const { data } = useApi(
+    ['record-assets', r.id],
+    '/digital-assets',
+    { recordId: r.id, pageSize: 100 },
+    { refetchInterval: (q) => (q.state.data?.data.some((a) => IN_PROGRESS.includes(a.status)) ? 4000 : false) },
+  );
   const upload = useApiMutation(
     async () => {
       const fd = new FormData();
@@ -323,12 +330,9 @@ function Assets({ r }) {
     },
     {
       success: (res) =>
-        `${res.data.length} file(s) uploaded${res.meta.rejected?.length ? `, ${res.meta.rejected.length} rejected` : ''}`,
+        `${res.data.length} file(s) received; scanning and storing continue in the background${res.meta.rejected?.length ? `. ${res.meta.rejected.length} rejected` : ''}`,
       invalidate: [['record-assets', r.id]],
-      onSuccess: () => {
-        setFiles([]);
-        setTimeout(refetch, 2500);
-      },
+      onSuccess: () => setFiles([]),
     },
   );
   return (

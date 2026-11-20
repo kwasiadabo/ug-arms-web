@@ -32,6 +32,7 @@ import {
   EmptyState,
 } from '../../components/ui/index.js';
 import { fmtBytes, fmtDateTime, humanize } from '../../utils/format.js';
+import { IN_PROGRESS } from '../../utils/assetStatus.js';
 
 /**
  * Shows a file with a preview of its access copy, its technical details, its derivatives, preservation events,
@@ -50,7 +51,7 @@ export default function AssetDetailPage() {
   const [rightsOpen, setRightsOpen] = useState(false);
   const [rights, setRights] = useState({});
   const { data, isLoading, error, refetch } = useApi(['asset', id], `/digital-assets/${id}`, null, {
-    refetchInterval: (q) => (['processing', 'uploaded'].includes(q.state.data?.data.status) ? 4000 : false),
+    refetchInterval: (q) => (IN_PROGRESS.includes(q.state.data?.data.status) ? 4000 : false),
   });
   const inval = [['asset', id], 'assets'];
   const publish = useApiMutation(
@@ -159,6 +160,12 @@ export default function AssetDetailPage() {
           </>
         }
       />
+      {['uploaded', 'scanning'].includes(a.status) && (
+        <Alert tone="info" className="mb-4">
+          Received: {a.status === 'scanning' ? 'scanning for malware and copying' : 'waiting to be scanned and copied'}{' '}
+          to secure storage…
+        </Alert>
+      )}
       {a.status === 'processing' && (
         <Alert tone="info" className="mb-4">
           Processing: extracting technical metadata and creating derivatives…
